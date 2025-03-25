@@ -2,9 +2,8 @@ import './patch-local-storage-for-github-pages';
 import './polyfills';
 import eruda from "eruda";
 
-import React, {StrictMode} from 'react'
-import {render} from 'react-dom';
-import { TonConnectUIProvider, THEME } from '@tonconnect/ui-react';
+import React from 'react'
+import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.scss'
 import {runSingleInstance} from "./utils/run-signle-instance";
@@ -50,14 +49,8 @@ async function enableMocking() {
   });
 }
 
-enableMocking().then(() => render(
-  <StrictMode>
-    <TonConnectUIProvider
-      manifestUrl="https://ton-payment-gateway.vercel.app/tonconnect-manifest.json"
-      uiPreferences={{ theme: THEME.LIGHT }}
-    >
-      <App/>
-    </TonConnectUIProvider>
-  </StrictMode>,
-  document.getElementById('root') as HTMLElement
+enableMocking().then(() => ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
 ));

@@ -12,13 +12,13 @@
     "@ton/core": "^0.56.0",
     "@ton/ton": "^13.11.2",
     "@tonconnect/ui-react": "^2.0.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "react": "17.0.2",
+    "react-dom": "17.0.2",
     "sass": "^1.69.5"
   },
   "devDependencies": {
-    "@types/react": "^18.2.15",
-    "@types/react-dom": "^18.2.7",
+    "@types/react": "^17.0.65",
+    "@types/react-dom": "^17.0.20",
     "@vitejs/plugin-react": "^4.0.3",
     "typescript": "^5.0.2",
     "vite": "^4.4.5"
