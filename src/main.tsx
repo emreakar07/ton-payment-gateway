@@ -3,7 +3,7 @@ import './polyfills';
 import eruda from "eruda";
 
 import React from 'react'
-import ReactDOM from 'react-dom/client'
+import { render } from 'react-dom'
 import App from './App'
 import './index.scss'
 import {runSingleInstance} from "./utils/run-signle-instance";
@@ -49,8 +49,16 @@ async function enableMocking() {
   });
 }
 
-enableMocking().then(() => ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-));
+enableMocking().then(() => {
+  const root = document.getElementById('root')
+  if (!root) {
+    throw new Error('Root element not found')
+  }
+
+  render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+    root
+  )
+});
