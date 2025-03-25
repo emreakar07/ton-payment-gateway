@@ -8,9 +8,7 @@ import {
   WalletContractV1R2,
   WalletContractV1R1,
   WalletContractV2R1,
-  WalletContractV2R2,
-  WalletContractV5Beta,
-  WalletContractV5R1
+  WalletContractV2R2
 } from "@ton/ton";
 import {Buffer} from "buffer";
 import {WalletContractV4R1} from "./wallet-contract-v4-r1";
@@ -24,9 +22,7 @@ const knownWallets = [
   {contract: WalletContractV3R1, loadData: loadWalletV3Data},
   {contract: WalletContractV3R2, loadData: loadWalletV3Data},
   {contract: WalletContractV4R1, loadData: loadWalletV4Data},
-  {contract: WalletContractV4, loadData: loadWalletV4Data},
-  {contract: WalletContractV5Beta, loadData: loadWalletV5BetaData},
-  {contract: WalletContractV5R1, loadData: loadWalletV5Data},
+  {contract: WalletContractV4, loadData: loadWalletV4Data}
 ].map(({contract, loadData}) => ({
   contract: contract,
   loadData: loadData,
@@ -58,24 +54,6 @@ function loadWalletV4Data(cs: Slice) {
   const publicKey = cs.loadBuffer(32);
   const plugins = cs.loadMaybeRef();
   return {seqno, publicKey, walletId, plugins};
-}
-
-function loadWalletV5BetaData(cs: Slice) {
-  const isSignatureAuthAllowed = cs.loadBoolean();
-  const seqno = cs.loadUint(32);
-  const walletId = cs.loadUintBig(80);
-  const publicKey = cs.loadBuffer(32);
-  const plugins = cs.loadMaybeRef();
-  return {isSignatureAuthAllowed, seqno, publicKey, walletId, plugins};
-}
-
-function loadWalletV5Data(cs: Slice) {
-  const isSignatureAuthAllowed = cs.loadBoolean();
-  const seqno = cs.loadUint(32);
-  const walletId = cs.loadUint(32);
-  const publicKey = cs.loadBuffer(32);
-  const plugins = cs.loadMaybeRef();
-  return {isSignatureAuthAllowed, seqno, publicKey, walletId, plugins};
 }
 
 export function tryParsePublicKey(stateInit: StateInit): Buffer | null {
