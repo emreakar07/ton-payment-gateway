@@ -4,6 +4,7 @@ import eruda from "eruda";
 
 import React, {StrictMode} from 'react'
 import {render} from 'react-dom';
+import { TonConnectUIProvider, THEME } from '@tonconnect/ui-react';
 import App from './App'
 import './index.scss'
 import {runSingleInstance} from "./utils/run-signle-instance";
@@ -20,7 +21,7 @@ async function enableMocking() {
       onUnhandledRequest: 'bypass',
       quiet: false,
       serviceWorker: {
-        url: `${import.meta.env.VITE_GH_PAGES ? '/demo-dapp-with-react-ui' : ''}/mockServiceWorker.js`
+        url: `${import.meta.env.VITE_GH_PAGES ? '/ton-payment-gateway' : ''}/mockServiceWorker.js`
       }
     });
     let serviceWorkerRegistration: ServiceWorkerRegistration | null | void = await startMockWorker();
@@ -51,7 +52,12 @@ async function enableMocking() {
 
 enableMocking().then(() => render(
   <StrictMode>
-    <App/>
+    <TonConnectUIProvider
+      manifestUrl="https://ton-payment-gateway.vercel.app/tonconnect-manifest.json"
+      uiPreferences={{ theme: THEME.LIGHT }}
+    >
+      <App/>
+    </TonConnectUIProvider>
   </StrictMode>,
   document.getElementById('root') as HTMLElement
 ));
