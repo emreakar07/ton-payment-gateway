@@ -9,8 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@ton/core": "^0.53.0",
-    "@ton/ton": "^13.9.0",
+    "@ton/core": "^0.56.0",
+    "@ton/ton": "^13.11.2",
     "@tonconnect/ui-react": "^2.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
