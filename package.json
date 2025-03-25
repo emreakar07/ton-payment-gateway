@@ -14,16 +14,24 @@
     "@tonconnect/ui-react": "^2.0.0",
     "react": "17.0.2",
     "react-dom": "17.0.2",
-    "sass": "^1.69.5"
+    "sass": "^1.69.5",
+    "eruda": "^3.0.1",
+    "@ton-community/assets-sdk": "^0.0.1",
+    "jose": "^5.2.2",
+    "msw": "^2.2.1"
   },
   "devDependencies": {
     "@types/react": "17.0.65",
     "@types/react-dom": "17.0.20",
     "@vitejs/plugin-react": "^4.0.3",
     "typescript": "^5.0.2",
-    "vite": "^4.4.5"
+    "vite": "^4.4.5",
+    "@types/eruda": "^2.4.3"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "msw": {
+    "workerDirectory": "public"
   }
 }

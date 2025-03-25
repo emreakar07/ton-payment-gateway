@@ -1,14 +1,14 @@
 import {
   Slice,
   StateInit,
-  WalletContractV1R1,
-  WalletContractV1R2,
+  WalletContractV4,
+  WalletContractV3R2,
+  WalletContractV3R1,
   WalletContractV1R3,
+  WalletContractV1R2,
+  WalletContractV1R1,
   WalletContractV2R1,
   WalletContractV2R2,
-  WalletContractV3R1,
-  WalletContractV3R2,
-  WalletContractV4 as WalletContractV4R2,
   WalletContractV5Beta,
   WalletContractV5R1
 } from "@ton/ton";
@@ -24,7 +24,7 @@ const knownWallets = [
   {contract: WalletContractV3R1, loadData: loadWalletV3Data},
   {contract: WalletContractV3R2, loadData: loadWalletV3Data},
   {contract: WalletContractV4R1, loadData: loadWalletV4Data},
-  {contract: WalletContractV4R2, loadData: loadWalletV4Data},
+  {contract: WalletContractV4, loadData: loadWalletV4Data},
   {contract: WalletContractV5Beta, loadData: loadWalletV5BetaData},
   {contract: WalletContractV5R1, loadData: loadWalletV5Data},
 ].map(({contract, loadData}) => ({
