@@ -1,4 +1,4 @@
-import {Buffer} from 'buffer';
+import { Buffer } from 'buffer';
 
 declare global {
   interface Window {
@@ -6,6 +6,4 @@ declare global {
   }
 }
 
-if (window && !window.Buffer) {
-  window.Buffer = Buffer;
-}
+window.Buffer = Buffer;
