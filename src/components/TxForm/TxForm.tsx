@@ -232,8 +232,6 @@ export function TxForm() {
           <div className="value">{formData.amount} {formData.tokenType}</div>
         </div>
 
-        {error && <div className="error-message">{error}</div>}
-
         <div className="status-message">
           {!wallet ? (
             <p>İşlemi tamamlamak için lütfen cüzdanınızı bağlayın.</p>
