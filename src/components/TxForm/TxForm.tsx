@@ -1,7 +1,6 @@
-import React, {useCallback, useState, useEffect} from 'react';
+import React, {useCallback, useState, useEffect, useRef} from 'react';
 import {SendTransactionRequest, useTonConnectUI, useTonWallet} from "@tonconnect/ui-react";
 import { createTONTransferTransaction, createUSDTTransferTransaction } from '@utils/jetton-helpers';
-import { useTelegramWebApp } from '@/hooks/useTelegramWebApp';
 import './style.scss';
 
 interface TransferFormData {
@@ -25,62 +24,100 @@ const defaultFormData: TransferFormData = {
   tokenType: 'TON'
 };
 
+// Wallet disconnection timeout - 5 minutes
+const DISCONNECT_TIMEOUT = 5 * 60 * 1000;
+
 export function TxForm() {
   const [formData, setFormData] = useState<TransferFormData>(defaultFormData);
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [transactionSent, setTransactionSent] = useState(false);
-
+  
+  const disconnectTimerRef = useRef<number | null>(null);
   const wallet = useTonWallet();
   const [tonConnectUi] = useTonConnectUI();
-  const { 
-    isReady: isTelegramReady, 
-    showMainButton, 
-    hideMainButton,
-    showLoadingMainButton,
-    hideLoadingMainButton,
-    closeApp,
-    expandApp,
-    themeParams 
-  } = useTelegramWebApp();
 
-  // Cleanup effect - component unmount olduğunda cüzdan bağlantısını kapat
-  useEffect(() => {
-    // Sayfa yüklendiğinde mevcut bağlantıyı kontrol et
-    const checkConnection = async () => {
-      const isConnected = await tonConnectUi.getWallets();
-      if (isConnected.length > 0) {
-        console.log('Mevcut cüzdan bağlantısı bulundu');
-      }
-    };
+  // Bağlantı kesme zamanlayıcısını başlat
+  const startDisconnectTimer = () => {
+    // Eğer önceden bir timer varsa temizle
+    if (disconnectTimerRef.current) {
+      window.clearTimeout(disconnectTimerRef.current);
+    }
     
-    checkConnection();
+    // Yeni timer başlat
+    disconnectTimerRef.current = window.setTimeout(() => {
+      if (wallet) {
+        console.log('Hareketsizlik nedeniyle cüzdan bağlantısı sonlandırılıyor...');
+        tonConnectUi.disconnect();
+      }
+    }, DISCONNECT_TIMEOUT);
+  };
 
-    // Cleanup function - component unmount olduğunda çalışır
-    return () => {
-      console.log('Component unmounting, disconnecting wallet...');
-      tonConnectUi.disconnect();
-    };
-  }, [tonConnectUi]);
+  // Kullanıcı aktivitesi olduğunda timer'ı sıfırla
+  const resetDisconnectTimer = () => {
+    if (wallet) {
+      startDisconnectTimer();
+    }
+  };
 
-  // Telegram WebApp entegrasyonu
+  // Kullanıcı aktivitesini izle
   useEffect(() => {
-    if (isTelegramReady) {
-      expandApp(); // Mini app'i genişlet
-
-      if (!wallet) {
-        showMainButton('Cüzdan Bağla', () => {
-          tonConnectUi.connectWallet();
+    if (wallet) {
+      // İlk bağlantıda timer'ı başlat
+      startDisconnectTimer();
+      
+      // Kullanıcı aktivitesini izleyen event listener'lar
+      const userActivityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+      
+      // Her aktivitede timer'ı sıfırla
+      const handleUserActivity = () => {
+        resetDisconnectTimer();
+      };
+      
+      // Event listener'ları ekle
+      userActivityEvents.forEach(eventName => {
+        document.addEventListener(eventName, handleUserActivity);
+      });
+      
+      // Sayfa kapanırken bağlantıyı sonlandır
+      const handleBeforeUnload = () => {
+        console.log('Sayfa kapatılıyor, cüzdan bağlantısı sonlandırılıyor...');
+        tonConnectUi.disconnect();
+      };
+      
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      
+      // Cleanup
+      return () => {
+        if (disconnectTimerRef.current) {
+          window.clearTimeout(disconnectTimerRef.current);
+        }
+        
+        userActivityEvents.forEach(eventName => {
+          document.removeEventListener(eventName, handleUserActivity);
         });
-      } else if (!loading && !transactionSent) {
-        showMainButton('İşlemi Gönder', createAndSendTransaction);
+        
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+        
+        console.log('Component unmounting, disconnecting wallet...');
+        tonConnectUi.disconnect();
+      };
+    }
+  }, [wallet, tonConnectUi]);
+
+  // Wallet bağlantı durumunu izle
+  useEffect(() => {
+    if (wallet) {
+      console.log('Cüzdan bağlandı, timeout timer başlatılıyor');
+      startDisconnectTimer();
+    } else {
+      console.log('Cüzdan bağlantısı kesildi');
+      if (disconnectTimerRef.current) {
+        window.clearTimeout(disconnectTimerRef.current);
+        disconnectTimerRef.current = null;
       }
     }
-
-    return () => {
-      hideMainButton();
-    };
-  }, [isTelegramReady, wallet, loading, transactionSent]);
+  }, [wallet]);
 
   // URL'den payment_data parametresini parse et
   const parsePaymentData = (): PaymentData | null => {
@@ -136,11 +173,19 @@ export function TxForm() {
     try {
       setLoading(true);
       setError('');
-      showLoadingMainButton();
       
       if (!formData.toAddress || !formData.amount) {
         throw new Error('Geçersiz işlem verileri');
       }
+
+      // Cüzdan bağlı değilse, bağlantı penceresini aç
+      if (!wallet?.account?.address) {
+        await tonConnectUi.connectWallet();
+        return; // Bağlantıdan sonra fonksiyondan çık
+      }
+
+      // Her işlemde timeout timer'ı sıfırla
+      resetDisconnectTimer();
 
       let transaction: SendTransactionRequest;
       
@@ -151,9 +196,6 @@ export function TxForm() {
           formData.paymentId
         );
       } else {
-        if (!wallet?.account?.address) {
-          throw new Error('Cüzdan bağlı değil');
-        }
         transaction = await createUSDTTransferTransaction(
           formData.toAddress,
           formData.amount,
@@ -164,15 +206,11 @@ export function TxForm() {
 
       await tonConnectUi.sendTransaction(transaction);
       setTransactionSent(true);
-      hideMainButton();
-      setTimeout(() => {
-        closeApp();
-      }, 2000);
+      // İşlem başarılı olduğunda cüzdan bağlantısı korunur, kullanıcı isterse tekrar işlem yapabilir
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bir hata oluştu');
     } finally {
       setLoading(false);
-      hideLoadingMainButton();
     }
   };
 
@@ -204,7 +242,13 @@ export function TxForm() {
           ) : transactionSent ? (
             <p>İşlem başarıyla gönderildi! Pencere kapanıyor...</p>
           ) : (
-            <p>Cüzdan bağlandı, işlemi göndermek için hazır.</p>
+            <button 
+              onClick={createAndSendTransaction}
+              disabled={loading || transactionSent}
+              className="send-transaction-button"
+            >
+              İşlemi Gönder
+            </button>
           )}
         </div>
       </div>
