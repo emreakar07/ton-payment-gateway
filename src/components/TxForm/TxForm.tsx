@@ -26,16 +26,58 @@ const defaultFormData: TransferFormData = {
 
 // Wallet disconnection timeout - 5 minutes
 const DISCONNECT_TIMEOUT = 5 * 60 * 1000;
+// TON ödemeleri için zaman sınırı - 2 minutes
+const TON_PAYMENT_TIMEOUT = 2 * 60 * 1000;
 
 export function TxForm() {
   const [formData, setFormData] = useState<TransferFormData>(defaultFormData);
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [transactionSent, setTransactionSent] = useState(false);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
   
   const disconnectTimerRef = useRef<number | null>(null);
+  const tonPaymentTimerRef = useRef<number | null>(null);
   const wallet = useTonWallet();
   const [tonConnectUi] = useTonConnectUI();
+
+  // TON ödeme zamanlayıcısını başlat
+  const startTonPaymentTimer = useCallback(() => {
+    // Eğer önceden bir timer varsa temizle
+    if (tonPaymentTimerRef.current) {
+      window.clearInterval(tonPaymentTimerRef.current);
+    }
+    
+    // Kalan süreyi sıfırla
+    setTimeLeft(TON_PAYMENT_TIMEOUT / 1000);
+    
+    // Yeni timer başlat
+    tonPaymentTimerRef.current = window.setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev === null || prev <= 1) {
+          // Süre dolduğunda
+          if (tonPaymentTimerRef.current) {
+            window.clearInterval(tonPaymentTimerRef.current);
+          }
+          // Mini app'i kapat
+          if (window.Telegram && window.Telegram.WebApp) {
+            window.Telegram.WebApp.close();
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  // TON ödeme zamanlayıcısını temizle
+  const clearTonPaymentTimer = useCallback(() => {
+    if (tonPaymentTimerRef.current) {
+      window.clearInterval(tonPaymentTimerRef.current);
+      tonPaymentTimerRef.current = null;
+    }
+    setTimeLeft(null);
+  }, []);
 
   // Bağlantı kesme zamanlayıcısını başlat
   const startDisconnectTimer = () => {
@@ -91,6 +133,10 @@ export function TxForm() {
       return () => {
         if (disconnectTimerRef.current) {
           window.clearTimeout(disconnectTimerRef.current);
+        }
+        
+        if (tonPaymentTimerRef.current) {
+          window.clearInterval(tonPaymentTimerRef.current);
         }
         
         userActivityEvents.forEach(eventName => {
@@ -166,8 +212,13 @@ export function TxForm() {
         paymentId: paymentData.payment_id,
         tokenType: paymentData.type
       });
+
+      // Eğer TON ödemesi ise zamanlayıcıyı başlat
+      if (paymentData.type === 'TON') {
+        startTonPaymentTimer();
+      }
     }
-  }, []);
+  }, [startTonPaymentTimer]);
 
   const createAndSendTransaction = async () => {
     try {
@@ -206,6 +257,8 @@ export function TxForm() {
 
       await tonConnectUi.sendTransaction(transaction);
       setTransactionSent(true);
+      // İşlem başarılı olduğunda zamanlayıcıyı temizle
+      clearTonPaymentTimer();
       // İşlem başarılı olduğunda cüzdan bağlantısı korunur, kullanıcı isterse tekrar işlem yapabilir
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bir hata oluştu');
@@ -231,6 +284,12 @@ export function TxForm() {
           <label>Miktar:</label>
           <div className="value">{formData.amount} {formData.tokenType}</div>
         </div>
+
+        {formData.tokenType === 'TON' && timeLeft !== null && (
+          <div className="time-left">
+            Kalan Süre: {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
+          </div>
+        )}
 
         <div className="status-message">
           {!wallet ? (
