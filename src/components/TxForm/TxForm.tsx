@@ -30,14 +30,29 @@ const DISCONNECT_TIMEOUT = 5 * 60 * 1000;
 // TON fiyatını USDT cinsinden getiren API fonksiyonu
 async function getTonPrice(): Promise<number> {
   try {
-    // CoinGecko API kullanılarak TON/USD fiyatı alınıyor
-    const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=toncoin&vs_currencies=usd');
+    // CoinGecko API için daha güvenilir endpoint
+    const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd', {
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`API yanıt vermedi: ${response.status}`);
+    }
+
     const data = await response.json();
-    return data.toncoin.usd;
+    
+    if (!data['the-open-network']?.usd) {
+      throw new Error('TON fiyatı bulunamadı');
+    }
+
+    return data['the-open-network'].usd;
   } catch (error) {
     console.error('TON fiyatı alınamadı:', error);
-    // Hata durumunda varsayılan bir değer (örn. son bilinen değer)
-    return 6.5; // Varsayılan TON/USDT değeri, güncel değer ile değiştirilmelidir
+    // Hata durumunda varsayılan bir değer (güncel TON fiyatı)
+    return 2.5; // Varsayılan TON/USDT değeri, güncel değer ile değiştirilmelidir
   }
 }
 
