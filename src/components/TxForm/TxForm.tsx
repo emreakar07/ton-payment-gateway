@@ -27,89 +27,52 @@ const defaultFormData: TransferFormData = {
 // Wallet disconnection timeout - 5 minutes
 const DISCONNECT_TIMEOUT = 5 * 60 * 1000;
 
+// TON fiyatını USDT cinsinden getiren API fonksiyonu
+async function getTonPrice(): Promise<number> {
+  try {
+    // CoinGecko API kullanılarak TON/USD fiyatı alınıyor
+    const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=toncoin&vs_currencies=usd');
+    const data = await response.json();
+    return data.toncoin.usd;
+  } catch (error) {
+    console.error('TON fiyatı alınamadı:', error);
+    // Hata durumunda varsayılan bir değer (örn. son bilinen değer)
+    return 6.5; // Varsayılan TON/USDT değeri, güncel değer ile değiştirilmelidir
+  }
+}
+
 export function TxForm() {
   const [formData, setFormData] = useState<TransferFormData>(defaultFormData);
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [transactionSent, setTransactionSent] = useState(false);
+  const [calculatedAmount, setCalculatedAmount] = useState<string | null>(null);
   
   const disconnectTimerRef = useRef<number | null>(null);
   const wallet = useTonWallet();
   const [tonConnectUi] = useTonConnectUI();
 
-  // Bağlantı kesme zamanlayıcısını başlat
-  const startDisconnectTimer = () => {
+  // Bağlantı kesme zamanlayıcısını başlat - sabit 5 dakika
+  const startFixedDisconnectTimer = useCallback(() => {
     // Eğer önceden bir timer varsa temizle
     if (disconnectTimerRef.current) {
       window.clearTimeout(disconnectTimerRef.current);
     }
     
-    // Yeni timer başlat
+    // Yeni timer başlat - tam 5 dakika sonra bağlantıyı kes
     disconnectTimerRef.current = window.setTimeout(() => {
       if (wallet) {
-        console.log('Hareketsizlik nedeniyle cüzdan bağlantısı sonlandırılıyor...');
+        console.log('5 dakika doldu, cüzdan bağlantısı sonlandırılıyor...');
         tonConnectUi.disconnect();
       }
     }, DISCONNECT_TIMEOUT);
-  };
-
-  // Kullanıcı aktivitesi olduğunda timer'ı sıfırla
-  const resetDisconnectTimer = () => {
-    if (wallet) {
-      startDisconnectTimer();
-    }
-  };
-
-  // Kullanıcı aktivitesini izle
-  useEffect(() => {
-    if (wallet) {
-      // İlk bağlantıda timer'ı başlat
-      startDisconnectTimer();
-      
-      // Kullanıcı aktivitesini izleyen event listener'lar
-      const userActivityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
-      
-      // Her aktivitede timer'ı sıfırla
-      const handleUserActivity = () => {
-        resetDisconnectTimer();
-      };
-      
-      // Event listener'ları ekle
-      userActivityEvents.forEach(eventName => {
-        document.addEventListener(eventName, handleUserActivity);
-      });
-      
-      // Sayfa kapanırken bağlantıyı sonlandır
-      const handleBeforeUnload = () => {
-        console.log('Sayfa kapatılıyor, cüzdan bağlantısı sonlandırılıyor...');
-        tonConnectUi.disconnect();
-      };
-      
-      window.addEventListener('beforeunload', handleBeforeUnload);
-      
-      // Cleanup
-      return () => {
-        if (disconnectTimerRef.current) {
-          window.clearTimeout(disconnectTimerRef.current);
-        }
-        
-        userActivityEvents.forEach(eventName => {
-          document.removeEventListener(eventName, handleUserActivity);
-        });
-        
-        window.removeEventListener('beforeunload', handleBeforeUnload);
-        
-        console.log('Component unmounting, disconnecting wallet...');
-        tonConnectUi.disconnect();
-      };
-    }
   }, [wallet, tonConnectUi]);
 
   // Wallet bağlantı durumunu izle
   useEffect(() => {
     if (wallet) {
-      console.log('Cüzdan bağlandı, timeout timer başlatılıyor');
-      startDisconnectTimer();
+      console.log('Cüzdan bağlandı, 5 dakikalık timer başlatılıyor');
+      startFixedDisconnectTimer();
     } else {
       console.log('Cüzdan bağlantısı kesildi');
       if (disconnectTimerRef.current) {
@@ -117,7 +80,19 @@ export function TxForm() {
         disconnectTimerRef.current = null;
       }
     }
-  }, [wallet]);
+  }, [wallet, startFixedDisconnectTimer]);
+
+  // Temizleme işlemi
+  useEffect(() => {
+    return () => {
+      if (disconnectTimerRef.current) {
+        window.clearTimeout(disconnectTimerRef.current);
+      }
+      
+      console.log('Component unmounting, disconnecting wallet...');
+      tonConnectUi.disconnect();
+    };
+  }, [tonConnectUi]);
 
   // URL'den payment_data parametresini parse et
   const parsePaymentData = (): PaymentData | null => {
@@ -184,21 +159,28 @@ export function TxForm() {
         return; // Bağlantıdan sonra fonksiyondan çık
       }
 
-      // Her işlemde timeout timer'ı sıfırla
-      resetDisconnectTimer();
-
       let transaction: SendTransactionRequest;
+      let actualAmount = formData.amount;
+
+      // Sadece TON işlemleri için anlık fiyat düzenlemesi
+      if (formData.tokenType === 'TON') {
+        const tonPrice = await getTonPrice();
+        const usdtValue = parseFloat(formData.amount);
+        actualAmount = (usdtValue / tonPrice).toFixed(9);
+        setCalculatedAmount(actualAmount);
+        console.log(`USDT ${formData.amount} -> TON ${actualAmount} (Fiyat: ${tonPrice} USDT)`);
+      }
       
       if (formData.tokenType === 'TON') {
         transaction = createTONTransferTransaction(
           formData.toAddress,
-          formData.amount,
+          actualAmount,
           formData.paymentId
         );
       } else {
         transaction = await createUSDTTransferTransaction(
           formData.toAddress,
-          formData.amount,
+          actualAmount,
           wallet.account.address,
           formData.paymentId
         );
@@ -229,7 +211,12 @@ export function TxForm() {
 
         <div className="form-group">
           <label>Miktar:</label>
-          <div className="value">{formData.amount} {formData.tokenType}</div>
+          <div className="value">
+            {formData.amount} {formData.tokenType === 'TON' ? 'USDT' : formData.tokenType}
+            {calculatedAmount && formData.tokenType === 'TON' && (
+              <span className="converted-amount"> (~{calculatedAmount} TON)</span>
+            )}
+          </div>
         </div>
 
         <div className="status-message">
