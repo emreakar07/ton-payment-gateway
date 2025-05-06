@@ -172,32 +172,38 @@ export function TxForm() {
       const paymentDataStr = urlParams.get('payment_data');
       
       if (!paymentDataStr) {
-        throw new Error('Payment data bulunamadı');
+        console.log('Payment data parametre bulunamadı, varsayılan değerler kullanılacak');
+        return null;
       }
 
-      // Base64 decode
-      const decodedStr = atob(paymentDataStr);
-      const paymentData = JSON.parse(decodedStr) as PaymentData;
+      try {
+        // Base64 decode
+        const decodedStr = atob(paymentDataStr);
+        const paymentData = JSON.parse(decodedStr) as PaymentData;
 
-      // Gerekli alanların kontrolü
-      if (!paymentData.amount || !paymentData.address || !paymentData.type) {
-        throw new Error('Geçersiz payment_data formatı');
+        // Gerekli alanların kontrolü
+        if (!paymentData.amount || !paymentData.address || !paymentData.type) {
+          throw new Error('Geçersiz payment_data formatı');
+        }
+
+        // Token tipinin kontrolü
+        if (paymentData.type !== 'TON' && paymentData.type !== 'USDT') {
+          throw new Error('Geçersiz token tipi');
+        }
+
+        console.log('Payment data parsed:', {
+          ...paymentData,
+          payment_id: paymentData.payment_id ? 'MEVCUT' : 'YOK'
+        });
+
+        return paymentData;
+      } catch (error) {
+        console.error('Payment data decode hatası:', error);
+        setError('Payment data decode edilemedi');
+        return null;
       }
-
-      // Token tipinin kontrolü
-      if (paymentData.type !== 'TON' && paymentData.type !== 'USDT') {
-        throw new Error('Geçersiz token tipi');
-      }
-
-      console.log('Payment data parsed:', {
-        ...paymentData,
-        payment_id: paymentData.payment_id ? 'MEVCUT' : 'YOK'
-      });
-
-      return paymentData;
     } catch (err) {
       console.error('Payment data parse hatası:', err);
-      setError(err instanceof Error ? err.message : 'Payment data parse hatası');
       return null;
     }
   };
@@ -220,6 +226,15 @@ export function TxForm() {
     }
   }, [startTonPaymentTimer]);
 
+  const handleConnectWallet = async () => {
+    try {
+      await tonConnectUi.connectWallet();
+    } catch (err) {
+      console.error('Cüzdan bağlama hatası:', err);
+      setError(`Cüzdan bağlanamadı: ${err instanceof Error ? err.message : 'Bilinmeyen hata'}`);
+    }
+  };
+
   const createAndSendTransaction = async () => {
     try {
       setLoading(true);
@@ -231,36 +246,52 @@ export function TxForm() {
 
       // Cüzdan bağlı değilse, bağlantı penceresini aç
       if (!wallet?.account?.address) {
-        await tonConnectUi.connectWallet();
+        await handleConnectWallet();
+        setLoading(false);
         return; // Bağlantıdan sonra fonksiyondan çık
       }
 
       // Her işlemde timeout timer'ı sıfırla
       resetDisconnectTimer();
 
+      console.log(`İşlem başlatılıyor: Token tipi: ${formData.tokenType}`);
+      console.log(`Alıcı: ${formData.toAddress}`);
+      console.log(`Miktar: ${formData.amount}`);
+      console.log(`Ödeme ID: ${formData.paymentId || 'Yok'}`);
+      
       let transaction: SendTransactionRequest;
       
-      if (formData.tokenType === 'TON') {
-        transaction = createTONTransferTransaction(
-          formData.toAddress,
-          formData.amount,
-          formData.paymentId
-        );
-      } else {
-        transaction = await createUSDTTransferTransaction(
-          formData.toAddress,
-          formData.amount,
-          wallet.account.address,
-          formData.paymentId
-        );
+      try {
+        if (formData.tokenType === 'TON') {
+          transaction = createTONTransferTransaction(
+            formData.toAddress,
+            formData.amount,
+            formData.paymentId
+          );
+        } else {
+          transaction = await createUSDTTransferTransaction(
+            formData.toAddress,
+            formData.amount,
+            wallet.account.address,
+            formData.paymentId
+          );
+        }
+        
+        console.log('İşlem oluşturuldu:', transaction);
+        
+        // İşlemi gönder
+        await tonConnectUi.sendTransaction(transaction);
+        console.log('İşlem başarıyla gönderildi');
+        
+        setTransactionSent(true);
+        // İşlem başarılı olduğunda zamanlayıcıyı temizle
+        clearTonPaymentTimer();
+      } catch (txError) {
+        console.error('İşlem oluşturma veya gönderme hatası:', txError);
+        throw new Error(`İşlem gönderilemedi: ${txError instanceof Error ? txError.message : 'Bilinmeyen hata'}`);
       }
-
-      await tonConnectUi.sendTransaction(transaction);
-      setTransactionSent(true);
-      // İşlem başarılı olduğunda zamanlayıcıyı temizle
-      clearTonPaymentTimer();
-      // İşlem başarılı olduğunda cüzdan bağlantısı korunur, kullanıcı isterse tekrar işlem yapabilir
     } catch (err) {
+      console.error('Genel hata:', err);
       setError(err instanceof Error ? err.message : 'Bir hata oluştu');
     } finally {
       setLoading(false);
@@ -291,21 +322,32 @@ export function TxForm() {
           </div>
         )}
 
+        {error && <div className="error-message">{error}</div>}
+
         <div className="status-message">
-          {!wallet ? (
-            <p>İşlemi tamamlamak için lütfen cüzdanınızı bağlayın.</p>
-          ) : loading ? (
+          {loading ? (
             <p>İşlem gönderiliyor...</p>
           ) : transactionSent ? (
-            <p>İşlem başarıyla gönderildi! Pencere kapanıyor...</p>
+            <p>İşlem başarıyla gönderildi!</p>
           ) : (
-            <button 
-              onClick={createAndSendTransaction}
-              disabled={loading || transactionSent}
-              className="send-transaction-button"
-            >
-              İşlemi Gönder
-            </button>
+            <div className="button-container">
+              {!wallet && (
+                <button 
+                  onClick={handleConnectWallet}
+                  className="connect-wallet-button"
+                >
+                  Cüzdan Bağla
+                </button>
+              )}
+              
+              <button 
+                onClick={createAndSendTransaction}
+                disabled={loading || transactionSent}
+                className="send-transaction-button"
+              >
+                İşlemi Gönder
+              </button>
+            </div>
           )}
         </div>
       </div>

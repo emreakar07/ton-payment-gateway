@@ -31,14 +31,12 @@
   }
 
   .error-message {
-    color: #dc3545;
-    background: rgba(220, 53, 69, 0.1);
-    padding: 0.875rem;
-    border-radius: 12px;
-    font-size: 0.875rem;
-    text-align: center;
-    border: 1px solid rgba(220, 53, 69, 0.2);
-    margin-bottom: 1rem;
+    color: #d32f2f;
+    background-color: #ffebee;
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 4px;
+    font-size: 14px;
   }
 
   .status-message {
@@ -100,33 +98,57 @@
     }
   }
 
-  button {
+  .button-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
     width: 100%;
-    padding: 0.875rem;
-    background: #0088cc;
-    color: white;
-    border: none;
-    border-radius: 12px;
-    font-size: 1rem;
-    font-weight: 600;
+  }
+
+  .connect-wallet-button,
+  .send-transaction-button {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
-    margin-top: 0.5rem;
+    transition: background-color 0.2s ease;
+    border: none;
+  }
+
+  .connect-wallet-button {
+    background-color: #7b68ee;
+    color: white;
 
     &:hover {
-      background: #006699;
-      transform: translateY(-1px);
+      background-color: #6a5acd;
     }
+  }
 
-    &:active {
-      transform: translateY(0);
+  .send-transaction-button {
+    background-color: #0098EA;
+    color: white;
+
+    &:hover {
+      background-color: #0088d1;
     }
 
     &:disabled {
-      background: #cccccc;
+      background-color: #ccc;
       cursor: not-allowed;
-      transform: none;
     }
+  }
+
+  .time-left {
+    background-color: #fff3cd;
+    color: #856404;
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 4px;
+    font-weight: bold;
+    text-align: center;
   }
 
   .auto-process-message {
