@@ -169,13 +169,24 @@ export function TxForm() {
   const sanitizeAddress = (address: string): string => {
     if (!address) return '';
     
-    // Adres içinde slash (/) varsa temizle
-    if (address.includes('/')) {
-      console.log("Adres slash içeriyor, temizleniyor:", address);
-      return address.split('/')[0];
+    let cleanAddress = address;
+    
+    // Adres içinde slash (/) varsa underscore (_) ile değiştir
+    if (cleanAddress.includes('/')) {
+      console.log("Adres slash içeriyor:", cleanAddress);
+      cleanAddress = cleanAddress.replace(/\//g, '_');
+      console.log("Slashlar underscore ile değiştirildi:", cleanAddress);
     }
     
-    return address;
+    // Telegram adreslerinde tipik olarak UQ, EQ, kQ başlangıçlar kullanılır
+    // Eğer bunlardan biriyle başlıyorsa ve underscore içeriyorsa doğrudan kullan
+    if ((cleanAddress.startsWith('UQ') || cleanAddress.startsWith('EQ') || cleanAddress.startsWith('kQ')) &&
+        cleanAddress.includes('_')) {
+      console.log("Telegram adres formatı tespit edildi:", cleanAddress);
+      return cleanAddress; // Bu format Telegram'ın beklediği formattır
+    }
+    
+    return cleanAddress;
   };
 
   // URL'den payment_data parametresini parse et

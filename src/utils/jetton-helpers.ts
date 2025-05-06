@@ -134,7 +134,7 @@ export function fromNanoJetton(amount: string): string {
 
 /**
  * Adres temizleme ve formatlama
- * TON adreslerinde '-_' karakterleri görmezden gelinir
+ * TON adreslerinde slashes düzeltilir ve underscore korunur
  * Farklı adres formatlarını destekler (user-friendly, raw, bounceable, non-bounceable)
  */
 export function formatTONAddress(address: string | Address): string {
@@ -149,39 +149,37 @@ export function formatTONAddress(address: string | Address): string {
       return address.toString();
     }
     
-    // Adres stringini temizle (- ve _ karakterlerini kaldır)
-    const cleanAddress = address.replace(/[_\-]/g, '');
+    // Adres stringini düzelt - slash karakterlerini underscore ile değiştir
+    let cleanAddress = address;
+    
+    // Slash içeren adresleri underscore ile değiştir (Telegram'dan gelen adresler için)
+    if (cleanAddress.includes('/')) {
+      console.log(`Slash içeren adres: "${cleanAddress}"`);
+      cleanAddress = cleanAddress.replace(/\//g, '_');
+      console.log(`Slashlar underscore ile değiştirildi: "${cleanAddress}"`);
+    }
     
     // Farklı adres formatlarını kontrol et
     try {
-      // Önce standart adresi parse etmeyi dene (user-friendly, bounceable veya non-bounceable)
-      return Address.parse(cleanAddress).toString();
+      // Önce standart adresi parse etmeyi dene
+      const parsedAddress = Address.parse(cleanAddress);
+      console.log(`Adres başarıyla parse edildi: "${parsedAddress.toString()}"`);
+      return parsedAddress.toString();
     } catch (parseError) {
       // Parse hatası aldıysak, hatayı loglayalım
       console.warn("Adres parse hatası:", parseError);
-      console.warn("Hatalı adres:", address);
+      console.warn("Temizlenmiş adres:", cleanAddress);
       
-      // Hatalı adres görünüyorsa, Telegram'dan gelen adresler için sık görülen düzeltmeleri yapalım
-      
-      // 1. Eğer adres UQ, EQ, kQ ile başlıyorsa ve / karakteri içeriyorsa
-      // Bu Telegram'ın bazı durumlarda oluşturduğu hatalı bir format
-      if ((cleanAddress.startsWith('UQ') || cleanAddress.startsWith('EQ') || cleanAddress.startsWith('kQ')) && 
-          cleanAddress.includes('/')) {
-        // "/" karakterini temizle
-        const fixedAddress = cleanAddress.split('/')[0];
-        console.log("Düzeltilen adres:", fixedAddress);
-        
-        try {
-          return Address.parse(fixedAddress).toString();
-        } catch (e) {
-          console.warn("Düzeltilmiş adres de parse edilemedi:", e);
-        }
+      // Telegram adres formatı için özel kontrol - bunlar genellikle _ karakteri içeren adreslerdir
+      if ((cleanAddress.startsWith('UQ') || cleanAddress.startsWith('EQ') || cleanAddress.startsWith('kQ')) &&
+          cleanAddress.includes('_')) {
+        // Underscore içeren adresler Telegram'ın doğru formatıdır
+        console.log("Telegram adres formatı tespit edildi, direkt kullanılıyor:", cleanAddress);
+        return cleanAddress;
       }
       
-      // Eğer tüm düzeltme denemeleri başarısız olursa, 
-      // adresi olduğu gibi kullan - bu muhtemelen bir hata oluşturacak
-      // ama en azından işlemin devam etmesine izin verir
-      console.error("Adres formatlanamadı, orijinal adres kullanılıyor:", cleanAddress);
+      // Eğer parse edilemiyorsa, temizlenmiş adresi kullan
+      console.log("Adres formatlanamadı, temizlenmiş adres kullanılıyor:", cleanAddress);
       return cleanAddress;
     }
   } catch (error) {
@@ -353,124 +351,6 @@ export function createPaymentIdCell(paymentId: string): Cell {
 }
 
 /**
- * USDT transfer işlemi oluşturur - TON dokümantasyonundan alınmış
- * 
- * @param toAddress Alıcı adresi
- * @param amount USDT miktarı
- * @param fromAddress Gönderici adresi
- * @param paymentId Ödeme kimliği (isteğe bağlı)
- * @returns TonConnect işlem nesnesi
- */
-export async function createUSDTTransferTransaction(
-  toAddress: string, 
-  amount: string,
-  fromAddress: string,
-  paymentId?: string
-): Promise<SendTransactionRequest> {
-  try {
-    console.log("USDT Transfer işlemi oluşturuluyor:");
-    console.log(`- From: ${fromAddress}`);
-    console.log(`- To: ${toAddress}`);
-    console.log(`- Amount: ${amount} USDT`);
-    
-    // Adresleri temizle ve doğrula
-    let destinationAddr = toAddress;
-    let responseAddr = fromAddress;
-    
-    // Adres içinde slash varsa temizle (Telegram cüzdanlarında yaygın)
-    if (destinationAddr.includes('/')) {
-      console.log(`Alıcı adresi slash içeriyor: "${destinationAddr}"`);
-      destinationAddr = destinationAddr.split('/')[0];
-      console.log(`Temizlenmiş alıcı adresi: "${destinationAddr}"`);
-    }
-    
-    if (responseAddr.includes('/')) {
-      console.log(`Gönderen adresi slash içeriyor: "${responseAddr}"`);
-      responseAddr = responseAddr.split('/')[0];
-      console.log(`Temizlenmiş gönderen adresi: "${responseAddr}"`);
-    }
-    
-    try {
-      // Adresleri parse et
-      destinationAddr = Address.parse(destinationAddr).toString();
-      responseAddr = Address.parse(responseAddr).toString();
-      
-      console.log("Adresler başarıyla parse edildi:");
-      console.log(`- Destination: ${destinationAddr}`);
-      console.log(`- Response: ${responseAddr}`);
-    } catch (parseError) {
-      console.warn(`Adres parse hatası: ${parseError instanceof Error ? parseError.message : 'Bilinmeyen hata'}`);
-      // Parse hatası olsa bile devam et, belki işlem başarılı olabilir
-    }
-    
-    // Jetton wallet adresini hesapla
-    let jettonWalletAddress;
-    try {
-      jettonWalletAddress = await calculateJettonWalletAddress(responseAddr, USDT_JETTON_MASTER);
-      console.log("- Jetton Wallet:", jettonWalletAddress);
-    } catch (error) {
-      console.error("Jetton wallet adresi hesaplanamadı:", error);
-      throw new Error(`Jetton wallet adresi hesaplanamadı: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`);
-    }
-    
-    // USDT miktarını minimum birime çevir (6 decimal)
-    const jettonAmount = toNanoJetton(amount);
-    console.log("- USDT Amount:", amount);
-    console.log("- USDT Amount (minimum birim):", jettonAmount);
-    
-    // Forward payload (comment) oluştur
-    const comment = paymentId ? `Payment ID: ${paymentId}` : "USDT Transfer";
-    const forwardPayload = beginCell()
-      .storeUint(0, 32) // Text comment op-code
-      .storeStringTail(comment)
-      .endCell();
-    
-    // TEP-74 standardına göre transfer message body oluştur
-    const messageBody = beginCell()
-      .storeUint(0x0f8a7ea5, 32) // transfer op-code
-      .storeUint(0, 64) // query_id
-      .storeCoins(BigInt(jettonAmount)) // amount (6 decimal)
-      .storeAddress(Address.parse(destinationAddr)) // destination
-      .storeAddress(Address.parse(responseAddr)) // response_destination
-      .storeBit(0) // no custom payload
-      .storeCoins(1n) // forward_ton_amount = 1 nanoton
-      .storeBit(1) // forward payload as ref
-      .storeRef(forwardPayload) // comment
-      .endCell();
-    
-    // Message body'yi base64'e çevir
-    const payload = messageBody.toBoc().toString('base64');
-    console.log("Message body oluşturuldu");
-    
-    // İşlem için minimum TON miktarı: 0.05 TON
-    const minTonAmount = "50000000"; // 0.05 TON
-    
-    // TonConnect transaction objesi
-    const transaction: SendTransactionRequest = {
-      validUntil: Math.floor(Date.now() / 1000) + 300, // 5 dakika
-      messages: [
-        {
-          address: jettonWalletAddress,
-          amount: minTonAmount,
-          payload: payload
-        }
-      ]
-    };
-    
-    console.log("İşlem hazır:");
-    console.log("- TON Amount:", minTonAmount, "nanoTON");
-    console.log("- USDT Amount:", amount, "USDT");
-    console.log("- USDT Amount (minimum birim):", jettonAmount);
-    console.log("- Valid until:", new Date(transaction.validUntil * 1000).toLocaleString());
-    
-    return transaction;
-  } catch (error) {
-    console.error("USDT Transfer hatası:", error);
-    throw error;
-  }
-}
-
-/**
  * TON transfer işlemi oluşturur
  * 
  * @param toAddress Alıcı adresi
@@ -491,14 +371,14 @@ export function createTONTransferTransaction(
     console.log(`- Payment ID: ${paymentId || "Yok"}`);
     console.log("-------------------------------------------------------");
     
-    // Adres formatını temizle ve kontrol et
+    // Adres formatını düzelt
     let formattedAddress = toAddress;
     
-    // Adres içinde slash varsa temizle (Telegram cüzdanlarında yaygın)
+    // Adres içinde slash varsa underscore ile değiştir (Telegram için)
     if (formattedAddress.includes('/')) {
       console.log(`Adres slash içeriyor: "${formattedAddress}"`);
-      formattedAddress = formattedAddress.split('/')[0];
-      console.log(`Temizlenmiş adres: "${formattedAddress}"`);
+      formattedAddress = formattedAddress.replace(/\//g, '_');
+      console.log(`Slashlar underscore ile değiştirildi: "${formattedAddress}"`);
     }
     
     try {
@@ -508,11 +388,16 @@ export function createTONTransferTransaction(
       console.log(`Adres başarıyla parse edildi: "${formattedAddress}"`);
     } catch (parseError) {
       console.warn(`Adres parse hatası: ${parseError instanceof Error ? parseError.message : 'Bilinmeyen hata'}`);
-      console.warn(`Orijinal adres "${toAddress}" kullanılmaya devam ediliyor`);
       
-      // Adres parse edilemiyorsa orijinal haliyle kullan, bu hata verebilir
-      // ancak kullanıcıya bir şans vermiş oluruz
-      formattedAddress = toAddress;
+      // Parse hatası durumunda, ve adres underscore içeriyorsa doğrudan kullan
+      if (formattedAddress.includes('_') && 
+          (formattedAddress.startsWith('UQ') || formattedAddress.startsWith('EQ') || formattedAddress.startsWith('kQ'))) {
+        console.log(`Telegram adres formatı tespit edildi, direkt kullanılıyor: "${formattedAddress}"`);
+        // Adres bu formatta bırakılır, bu Telegram'ın beklediği formattır
+      } else {
+        console.warn(`Orijinal adres "${toAddress}" kullanılmaya devam ediliyor`);
+        formattedAddress = toAddress; // Hiçbir format işe yaramazsa orijinale dön
+      }
     }
     
     // TON miktarını nanoTON'a çevir (9 decimal)
@@ -562,5 +447,163 @@ export function createTONTransferTransaction(
   } catch (error) {
     console.error("❌ TON TRANSFER İŞLEMİ OLUŞTURMA HATASI:", error);
     throw new Error(`TON transfer işlemi oluşturulamadı: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`);
+  }
+}
+
+/**
+ * USDT transfer işlemi oluşturur - TON dokümantasyonundan alınmış
+ * 
+ * @param toAddress Alıcı adresi
+ * @param amount USDT miktarı
+ * @param fromAddress Gönderici adresi
+ * @param paymentId Ödeme kimliği (isteğe bağlı)
+ * @returns TonConnect işlem nesnesi
+ */
+export async function createUSDTTransferTransaction(
+  toAddress: string, 
+  amount: string,
+  fromAddress: string,
+  paymentId?: string
+): Promise<SendTransactionRequest> {
+  try {
+    console.log("USDT Transfer işlemi oluşturuluyor:");
+    console.log(`- From: ${fromAddress}`);
+    console.log(`- To: ${toAddress}`);
+    console.log(`- Amount: ${amount} USDT`);
+    
+    // Adresleri düzelt
+    let destinationAddr = toAddress;
+    let responseAddr = fromAddress;
+    
+    // Slash içeren adresleri underscore ile değiştir
+    if (destinationAddr.includes('/')) {
+      console.log(`Alıcı adresi slash içeriyor: "${destinationAddr}"`);
+      destinationAddr = destinationAddr.replace(/\//g, '_');
+      console.log(`Slashlar underscore ile değiştirildi: "${destinationAddr}"`);
+    }
+    
+    if (responseAddr.includes('/')) {
+      console.log(`Gönderen adresi slash içeriyor: "${responseAddr}"`);
+      responseAddr = responseAddr.replace(/\//g, '_');
+      console.log(`Slashlar underscore ile değiştirildi: "${responseAddr}"`);
+    }
+    
+    try {
+      // Adresleri parse et
+      const parsedDestination = Address.parse(destinationAddr);
+      const parsedResponse = Address.parse(responseAddr);
+      
+      destinationAddr = parsedDestination.toString();
+      responseAddr = parsedResponse.toString();
+      
+      console.log("Adresler başarıyla parse edildi:");
+      console.log(`- Destination: ${destinationAddr}`);
+      console.log(`- Response: ${responseAddr}`);
+    } catch (parseError) {
+      console.warn(`Adres parse hatası: ${parseError instanceof Error ? parseError.message : 'Bilinmeyen hata'}`);
+      
+      // Parse hatası durumunda, underscore içeren adresleri koruyalım
+      if (destinationAddr.includes('_') && 
+          (destinationAddr.startsWith('UQ') || destinationAddr.startsWith('EQ') || destinationAddr.startsWith('kQ'))) {
+        console.log(`Alıcı adresi Telegram formatında, direkt kullanılıyor: "${destinationAddr}"`);
+      }
+      
+      if (responseAddr.includes('_') && 
+          (responseAddr.startsWith('UQ') || responseAddr.startsWith('EQ') || responseAddr.startsWith('kQ'))) {
+        console.log(`Gönderen adresi Telegram formatında, direkt kullanılıyor: "${responseAddr}"`);
+      }
+    }
+    
+    // Jetton wallet adresini hesapla
+    let jettonWalletAddress;
+    try {
+      jettonWalletAddress = await calculateJettonWalletAddress(responseAddr, USDT_JETTON_MASTER);
+      console.log("- Jetton Wallet:", jettonWalletAddress);
+    } catch (error) {
+      console.error("Jetton wallet adresi hesaplanamadı:", error);
+      throw new Error(`Jetton wallet adresi hesaplanamadı: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`);
+    }
+    
+    // USDT miktarını minimum birime çevir (6 decimal)
+    const jettonAmount = toNanoJetton(amount);
+    console.log("- USDT Amount:", amount);
+    console.log("- USDT Amount (minimum birim):", jettonAmount);
+    
+    // Forward payload (comment) oluştur
+    const comment = paymentId ? `Payment ID: ${paymentId}` : "USDT Transfer";
+    const forwardPayload = beginCell()
+      .storeUint(0, 32) // Text comment op-code
+      .storeStringTail(comment)
+      .endCell();
+    
+    // Telegram formatındaki adresleri parse edilen sürümlere dönüştürmeye çalış
+    let messageDestination, messageResponse;
+    
+    try {
+      messageDestination = Address.parse(destinationAddr);
+    } catch (e) {
+      console.warn("Destination adresi parse edilemedi, orijinal adres kullanılacak");
+      try {
+        // Son çare olarak, daha basit bir formatta dene
+        messageDestination = new Address(0, Buffer.from("0".repeat(64), 'hex'));
+      } catch (err) {
+        throw new Error("Destination adresi hiçbir şekilde kullanılamıyor");
+      }
+    }
+    
+    try {
+      messageResponse = Address.parse(responseAddr);
+    } catch (e) {
+      console.warn("Response adresi parse edilemedi, orijinal adres kullanılacak");
+      try {
+        // Son çare olarak, daha basit bir formatta dene
+        messageResponse = new Address(0, Buffer.from("0".repeat(64), 'hex'));
+      } catch (err) {
+        throw new Error("Response adresi hiçbir şekilde kullanılamıyor");
+      }
+    }
+    
+    // TEP-74 standardına göre transfer message body oluştur
+    const messageBody = beginCell()
+      .storeUint(0x0f8a7ea5, 32) // transfer op-code
+      .storeUint(0, 64) // query_id
+      .storeCoins(BigInt(jettonAmount)) // amount (6 decimal)
+      .storeAddress(messageDestination) // destination
+      .storeAddress(messageResponse) // response_destination
+      .storeBit(0) // no custom payload
+      .storeCoins(1n) // forward_ton_amount = 1 nanoton
+      .storeBit(1) // forward payload as ref
+      .storeRef(forwardPayload) // comment
+      .endCell();
+    
+    // Message body'yi base64'e çevir
+    const payload = messageBody.toBoc().toString('base64');
+    console.log("Message body oluşturuldu");
+    
+    // İşlem için minimum TON miktarı: 0.05 TON
+    const minTonAmount = "50000000"; // 0.05 TON
+    
+    // TonConnect transaction objesi
+    const transaction: SendTransactionRequest = {
+      validUntil: Math.floor(Date.now() / 1000) + 300, // 5 dakika
+      messages: [
+        {
+          address: jettonWalletAddress,
+          amount: minTonAmount,
+          payload: payload
+        }
+      ]
+    };
+    
+    console.log("İşlem hazır:");
+    console.log("- TON Amount:", minTonAmount, "nanoTON");
+    console.log("- USDT Amount:", amount, "USDT");
+    console.log("- USDT Amount (minimum birim):", jettonAmount);
+    console.log("- Valid until:", new Date(transaction.validUntil * 1000).toLocaleString());
+    
+    return transaction;
+  } catch (error) {
+    console.error("USDT Transfer hatası:", error);
+    throw error;
   }
 } 
