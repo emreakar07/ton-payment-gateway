@@ -165,6 +165,19 @@ export function TxForm() {
     }
   }, [wallet]);
 
+  // Alıcı adresini temizle ve düzelt
+  const sanitizeAddress = (address: string): string => {
+    if (!address) return '';
+    
+    // Adres içinde slash (/) varsa temizle
+    if (address.includes('/')) {
+      console.log("Adres slash içeriyor, temizleniyor:", address);
+      return address.split('/')[0];
+    }
+    
+    return address;
+  };
+
   // URL'den payment_data parametresini parse et
   const parsePaymentData = (): PaymentData | null => {
     try {
@@ -185,6 +198,9 @@ export function TxForm() {
         if (!paymentData.amount || !paymentData.address || !paymentData.type) {
           throw new Error('Geçersiz payment_data formatı');
         }
+
+        // Adresi temizle
+        paymentData.address = sanitizeAddress(paymentData.address);
 
         // Token tipinin kontrolü
         if (paymentData.type !== 'TON' && paymentData.type !== 'USDT') {
@@ -244,6 +260,9 @@ export function TxForm() {
         throw new Error('Geçersiz işlem verileri');
       }
 
+      // Adresi temizle
+      const cleanToAddress = sanitizeAddress(formData.toAddress);
+      
       // Cüzdan bağlı değilse, bağlantı penceresini aç
       if (!wallet?.account?.address) {
         await handleConnectWallet();
@@ -255,7 +274,7 @@ export function TxForm() {
       resetDisconnectTimer();
 
       console.log(`İşlem başlatılıyor: Token tipi: ${formData.tokenType}`);
-      console.log(`Alıcı: ${formData.toAddress}`);
+      console.log(`Temizlenmiş alıcı adresi: ${cleanToAddress}`);
       console.log(`Miktar: ${formData.amount}`);
       console.log(`Ödeme ID: ${formData.paymentId || 'Yok'}`);
       
@@ -264,13 +283,13 @@ export function TxForm() {
       try {
         if (formData.tokenType === 'TON') {
           transaction = createTONTransferTransaction(
-            formData.toAddress,
+            cleanToAddress,
             formData.amount,
             formData.paymentId
           );
         } else {
           transaction = await createUSDTTransferTransaction(
-            formData.toAddress,
+            cleanToAddress,
             formData.amount,
             wallet.account.address,
             formData.paymentId

@@ -157,57 +157,31 @@ export function formatTONAddress(address: string | Address): string {
       // Önce standart adresi parse etmeyi dene (user-friendly, bounceable veya non-bounceable)
       return Address.parse(cleanAddress).toString();
     } catch (parseError) {
-      console.warn("Standart adres parse başarısız, alternatif formatları deniyorum...", parseError);
+      // Parse hatası aldıysak, hatayı loglayalım
+      console.warn("Adres parse hatası:", parseError);
+      console.warn("Hatalı adres:", address);
       
-      // Farklı format denemelerini yapalım
+      // Hatalı adres görünüyorsa, Telegram'dan gelen adresler için sık görülen düzeltmeleri yapalım
       
-      // 1. Raw format olabilir mi? (0:...)
-      if (cleanAddress.includes(':')) {
+      // 1. Eğer adres UQ, EQ, kQ ile başlıyorsa ve / karakteri içeriyorsa
+      // Bu Telegram'ın bazı durumlarda oluşturduğu hatalı bir format
+      if ((cleanAddress.startsWith('UQ') || cleanAddress.startsWith('EQ') || cleanAddress.startsWith('kQ')) && 
+          cleanAddress.includes('/')) {
+        // "/" karakterini temizle
+        const fixedAddress = cleanAddress.split('/')[0];
+        console.log("Düzeltilen adres:", fixedAddress);
+        
         try {
-          const [wc, hash] = cleanAddress.split(':');
-          if (hash && hash.length >= 64) {
-            return new Address(Number(wc), Buffer.from(hash, 'hex')).toString();
-          }
+          return Address.parse(fixedAddress).toString();
         } catch (e) {
-          console.warn("Raw format parse başarısız:", e);
+          console.warn("Düzeltilmiş adres de parse edilemedi:", e);
         }
       }
       
-      // 2. Başka yaygın TON adres formatlarını deneme
-      // Bazı cüzdanlar base64url formatını kullanır
-      if (cleanAddress.startsWith('UQ') || cleanAddress.startsWith('EQ') || 
-          cleanAddress.startsWith('kQ') || cleanAddress.startsWith('0Q')) {
-        try {
-          // Base64url formatında TON adresi, başında workchain göstergesi var (UQ=0, EQ=0, kQ=-1)
-          let workchain = 0;
-          if (cleanAddress.startsWith('kQ')) {
-            workchain = -1;
-          }
-          
-          // Baştaki 2 karakteri kaldır ve base64url decode işlemi yap
-          const addressWithoutPrefix = cleanAddress.substring(2);
-          // Base64url'den normal base64'e çevir
-          const base64 = addressWithoutPrefix
-            .replace(/_/g, '/')
-            .replace(/-/g, '+');
-            
-          // Base64'ü çöz ve adres oluştur
-          let buffer;
-          try {
-            buffer = Buffer.from(base64, 'base64');
-            // İlk karakteri kontrol et bounceable/non-bounceable için
-            return new Address(workchain, buffer.subarray(buffer.length - 32)).toString();
-          } catch (b64Error) {
-            console.warn("Base64 decode başarısız:", b64Error);
-          }
-        } catch (formatError) {
-          console.warn("Adres format dönüşümü başarısız:", formatError);
-        }
-      }
-      
-      // Eğer hiçbir format işe yaramazsa, adresin kendisini döndür
-      // Bu durumda yüksek ihtimalle daha sonra bir hata oluşacak
-      console.error("Adres formatı tanınamadı, orijinal adres kullanılıyor:", cleanAddress);
+      // Eğer tüm düzeltme denemeleri başarısız olursa, 
+      // adresi olduğu gibi kullan - bu muhtemelen bir hata oluşturacak
+      // ama en azından işlemin devam etmesine izin verir
+      console.error("Adres formatlanamadı, orijinal adres kullanılıyor:", cleanAddress);
       return cleanAddress;
     }
   } catch (error) {
@@ -399,17 +373,45 @@ export async function createUSDTTransferTransaction(
     console.log(`- To: ${toAddress}`);
     console.log(`- Amount: ${amount} USDT`);
     
-    // Adresleri parse et ve doğrula
-    const destinationAddress = Address.parse(toAddress);
-    const responseAddress = Address.parse(fromAddress);
+    // Adresleri temizle ve doğrula
+    let destinationAddr = toAddress;
+    let responseAddr = fromAddress;
+    
+    // Adres içinde slash varsa temizle (Telegram cüzdanlarında yaygın)
+    if (destinationAddr.includes('/')) {
+      console.log(`Alıcı adresi slash içeriyor: "${destinationAddr}"`);
+      destinationAddr = destinationAddr.split('/')[0];
+      console.log(`Temizlenmiş alıcı adresi: "${destinationAddr}"`);
+    }
+    
+    if (responseAddr.includes('/')) {
+      console.log(`Gönderen adresi slash içeriyor: "${responseAddr}"`);
+      responseAddr = responseAddr.split('/')[0];
+      console.log(`Temizlenmiş gönderen adresi: "${responseAddr}"`);
+    }
+    
+    try {
+      // Adresleri parse et
+      destinationAddr = Address.parse(destinationAddr).toString();
+      responseAddr = Address.parse(responseAddr).toString();
+      
+      console.log("Adresler başarıyla parse edildi:");
+      console.log(`- Destination: ${destinationAddr}`);
+      console.log(`- Response: ${responseAddr}`);
+    } catch (parseError) {
+      console.warn(`Adres parse hatası: ${parseError instanceof Error ? parseError.message : 'Bilinmeyen hata'}`);
+      // Parse hatası olsa bile devam et, belki işlem başarılı olabilir
+    }
     
     // Jetton wallet adresini hesapla
-    const jettonWalletAddress = await calculateJettonWalletAddress(fromAddress, USDT_JETTON_MASTER);
-    
-    console.log("Adresler doğrulandı:");
-    console.log("- Destination:", destinationAddress.toString());
-    console.log("- Response:", responseAddress.toString());
-    console.log("- Jetton Wallet:", jettonWalletAddress);
+    let jettonWalletAddress;
+    try {
+      jettonWalletAddress = await calculateJettonWalletAddress(responseAddr, USDT_JETTON_MASTER);
+      console.log("- Jetton Wallet:", jettonWalletAddress);
+    } catch (error) {
+      console.error("Jetton wallet adresi hesaplanamadı:", error);
+      throw new Error(`Jetton wallet adresi hesaplanamadı: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`);
+    }
     
     // USDT miktarını minimum birime çevir (6 decimal)
     const jettonAmount = toNanoJetton(amount);
@@ -428,8 +430,8 @@ export async function createUSDTTransferTransaction(
       .storeUint(0x0f8a7ea5, 32) // transfer op-code
       .storeUint(0, 64) // query_id
       .storeCoins(BigInt(jettonAmount)) // amount (6 decimal)
-      .storeAddress(destinationAddress) // destination
-      .storeAddress(responseAddress) // response_destination
+      .storeAddress(Address.parse(destinationAddr)) // destination
+      .storeAddress(Address.parse(responseAddr)) // response_destination
       .storeBit(0) // no custom payload
       .storeCoins(1n) // forward_ton_amount = 1 nanoton
       .storeBit(1) // forward payload as ref
@@ -489,8 +491,29 @@ export function createTONTransferTransaction(
     console.log(`- Payment ID: ${paymentId || "Yok"}`);
     console.log("-------------------------------------------------------");
     
-    // Doğrudan orijinal adresi kullan
-    console.log(`- Kullanılan adres: "${toAddress}"`);
+    // Adres formatını temizle ve kontrol et
+    let formattedAddress = toAddress;
+    
+    // Adres içinde slash varsa temizle (Telegram cüzdanlarında yaygın)
+    if (formattedAddress.includes('/')) {
+      console.log(`Adres slash içeriyor: "${formattedAddress}"`);
+      formattedAddress = formattedAddress.split('/')[0];
+      console.log(`Temizlenmiş adres: "${formattedAddress}"`);
+    }
+    
+    try {
+      // Adresi parse etmeyi dene
+      const parsedAddress = Address.parse(formattedAddress);
+      formattedAddress = parsedAddress.toString();
+      console.log(`Adres başarıyla parse edildi: "${formattedAddress}"`);
+    } catch (parseError) {
+      console.warn(`Adres parse hatası: ${parseError instanceof Error ? parseError.message : 'Bilinmeyen hata'}`);
+      console.warn(`Orijinal adres "${toAddress}" kullanılmaya devam ediliyor`);
+      
+      // Adres parse edilemiyorsa orijinal haliyle kullan, bu hata verebilir
+      // ancak kullanıcıya bir şans vermiş oluruz
+      formattedAddress = toAddress;
+    }
     
     // TON miktarını nanoTON'a çevir (9 decimal)
     const tonAmount = toNano(amount);
@@ -521,7 +544,7 @@ export function createTONTransferTransaction(
       validUntil: Math.floor(Date.now() / 1000) + 300, // 5 dakika geçerli
       messages: [
         {
-          address: toAddress,
+          address: formattedAddress,
           amount: tonAmount,
           payload: payload
         }
@@ -530,7 +553,7 @@ export function createTONTransferTransaction(
     
     console.log("Final transaction:");
     console.log(`- Geçerlilik süresi: ${new Date(transaction.validUntil * 1000).toLocaleString()}`);
-    console.log(`- Alıcı adres: "${toAddress}"`);
+    console.log(`- Alıcı adres: "${formattedAddress}"`);
     console.log(`- Gönderilen TON: ${amount} TON (${tonAmount} nano)`);
     console.log(`- Payload boyutu: ${payload ? payload.length : 0} karakter`);
     console.log("================= İŞLEM OLUŞTURULDU =================");
